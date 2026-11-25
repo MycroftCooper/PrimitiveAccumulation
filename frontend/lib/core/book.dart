@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'models.dart';
+import 'backup.dart';
 
 class Book extends ChangeNotifier {
   final Database _db;
@@ -25,22 +26,35 @@ class Book extends ChangeNotifier {
     _db.execute(
       'CREATE TABLE IF NOT EXISTS notes(snapshot INTEGER PRIMARY KEY REFERENCES snapshots(id), text TEXT NOT NULL)',
     );
-    for (final row in _db.select('SELECT * FROM snapshots ORDER BY id')) {
-      _periods.add(
-        Snapshot(
-          row['id'],
-          DateTime.fromMicrosecondsSinceEpoch(row['time']),
-          _decodeItems(row['entries']),
-        ),
-      );
+    _db.execute(
+      'CREATE TABLE IF NOT EXISTS restore_state(id INTEGER PRIMARY KEY CHECK(id=1), generation INTEGER NOT NULL)',
+    );
+    _db.execute('INSERT OR IGNORE INTO restore_state VALUES(1,0)');
+    _db.execute('BEGIN');
+    try {
+      _generation = _storedGeneration;
+      _apply(_readData());
+      _db.execute('COMMIT');
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
     }
-    final prefs = {
-      for (final row in _db.select('SELECT * FROM preferences'))
-        row['key']: row['value'],
-    };
-    if (prefs['goal'] != null) {
-      goal = WealthGoal.fromJson(jsonDecode(prefs['goal']));
-    }
+  }
+
+  int _generation = 0;
+  int get _storedGeneration => _db
+      .select('SELECT generation FROM restore_state WHERE id=1')
+      .single['generation'];
+
+  void _apply(BackupData data) {
+    _periods
+      ..clear()
+      ..addAll(data.snapshots);
+    final prefs = data.preferences;
+    final savedGoal = prefs['goal'];
+    goal = savedGoal == null
+        ? null
+        : WealthGoal.fromJson(jsonDecode(savedGoal));
     skin = prefs['skin'] ?? 'grove';
     mode =
         ThemeMode.values.where((m) => m.name == prefs['mode']).firstOrNull ??
@@ -48,8 +62,9 @@ class Book extends ChangeNotifier {
     _savedDraft = prefs['draft'];
     draft = _savedDraft == null
         ? [...?latest?.entries]
-        : _decodeItems(prefs['draft']);
+        : _decodeItems(_savedDraft!);
   }
+
   static List<Entry> _decodeItems(String json) =>
       (jsonDecode(json) as List).map((m) => Entry.fromJson(m)).toList();
   static String _encodeItems(List<Entry> items) =>
@@ -103,6 +118,98 @@ class Book extends ChangeNotifier {
     'INSERT INTO preferences VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
     [key, value],
   );
+  void _write(void Function() action) {
+    _db.execute('BEGIN IMMEDIATE');
+    try {
+      if (_generation != _storedGeneration) {
+        throw StateError('账本已在其他窗口恢复，请重新打开。');
+      }
+      action();
+      _db.execute('COMMIT');
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    }
+  }
+
+  // Both other connections and writes by this window invalidate a restore preview.
+  ({int periodCount, (int, int) revision}) get restorePreview {
+    final row = _db
+        .select(
+          'SELECT data_version, total_changes() AS changes, '
+          '(SELECT count(*) FROM snapshots) AS periods FROM pragma_data_version',
+        )
+        .single;
+    return (
+      periodCount: row['periods'] as int,
+      revision: (row['data_version'] as int, row['changes'] as int),
+    );
+  }
+
+  (int, int) get revision => restorePreview.revision;
+
+  BackupData _readData() => BackupData.fromJson({
+    'snapshots': [
+      for (final row in _db.select('SELECT * FROM snapshots ORDER BY id'))
+        {
+          'id': row['id'],
+          'time': row['time'],
+          'entries': jsonDecode(row['entries']),
+        },
+    ],
+    'notes': {
+      for (final row in _db.select('SELECT * FROM notes'))
+        row['snapshot'].toString(): row['text'],
+    },
+    'preferences': {
+      for (final row in _db.select('SELECT * FROM preferences'))
+        row['key']: row['value'],
+    },
+  });
+
+  BackupData exportData() {
+    _db.execute('BEGIN');
+    try {
+      final result = _readData();
+      _db.execute('COMMIT');
+      return result;
+    } catch (_) {
+      _db.execute('ROLLBACK');
+      rethrow;
+    }
+  }
+
+  void restore(BackupData data, {required (int, int) expectedRevision}) {
+    _write(() {
+      if (expectedRevision != revision) throw StateError('账本已变化，请重新预览备份。');
+      _db.execute('DELETE FROM notes');
+      _db.execute('DELETE FROM snapshots');
+      _db.execute('DELETE FROM preferences');
+      for (final s in data.snapshots) {
+        _db.execute('INSERT INTO snapshots(id,time,entries) VALUES(?,?,?)', [
+          s.id,
+          s.time.microsecondsSinceEpoch,
+          _encodeItems(s.entries),
+        ]);
+      }
+      for (final n in data.notes.entries) {
+        _db.execute('INSERT INTO notes(snapshot,text) VALUES(?,?)', [
+          n.key,
+          n.value,
+        ]);
+      }
+      for (final p in data.preferences.entries) {
+        _pref(p.key, p.value);
+      }
+      _db.execute(
+        'UPDATE restore_state SET generation=generation+1 WHERE id=1',
+      );
+    });
+    _generation++;
+    _apply(data);
+    notifyListeners();
+  }
+
   void saveEntry(Entry entry) {
     final rows = [...draft];
     final i = rows.indexWhere((e) => e.id == entry.id);
@@ -112,15 +219,10 @@ class Book extends ChangeNotifier {
       rows[i] = entry;
     }
     final encoded = _encodeItems(rows);
-    _db.execute('BEGIN IMMEDIATE');
-    try {
+    _write(() {
       _checkBase();
       _pref('draft', encoded);
-      _db.execute('COMMIT');
-    } catch (_) {
-      _db.execute('ROLLBACK');
-      rethrow;
-    }
+    });
     _savedDraft = encoded;
     draft = rows;
     notifyListeners();
@@ -139,9 +241,8 @@ class Book extends ChangeNotifier {
 
   Snapshot _commitAt(DateTime time) {
     if (draft.isEmpty) throw StateError('请先添加条目');
-    _db.execute('BEGIN IMMEDIATE');
     late Snapshot snap;
-    try {
+    _write(() {
       _checkBase();
       _db.execute('INSERT INTO snapshots(time,entries) VALUES(?,?)', [
         time.microsecondsSinceEpoch,
@@ -149,11 +250,7 @@ class Book extends ChangeNotifier {
       ]);
       snap = Snapshot(_db.lastInsertRowId, time, draft);
       _db.execute("DELETE FROM preferences WHERE key='draft'");
-      _db.execute('COMMIT');
-    } catch (_) {
-      _db.execute('ROLLBACK');
-      rethrow;
-    }
+    });
     _periods.add(snap);
     _savedDraft = null;
     draft = [...snap.entries];
@@ -162,7 +259,7 @@ class Book extends ChangeNotifier {
   }
 
   void setGoal(WealthGoal value) {
-    _pref('goal', jsonEncode(value.toJson()));
+    _write(() => _pref('goal', jsonEncode(value.toJson())));
     goal = value;
     notifyListeners();
   }
@@ -173,23 +270,20 @@ class Book extends ChangeNotifier {
       ]).firstOrNull?['text'] ??
       '';
   void saveNote(int id, String value) {
-    _db.execute(
-      'INSERT INTO notes VALUES(?,?) ON CONFLICT(snapshot) DO UPDATE SET text=excluded.text',
-      [id, value.trim()],
+    _write(
+      () => _db.execute(
+        'INSERT INTO notes VALUES(?,?) ON CONFLICT(snapshot) DO UPDATE SET text=excluded.text',
+        [id, value.trim()],
+      ),
     );
     notifyListeners();
   }
 
   void appearance(ThemeMode value, String palette) {
-    _db.execute('BEGIN');
-    try {
+    _write(() {
       _pref('mode', value.name);
       _pref('skin', palette);
-      _db.execute('COMMIT');
-    } catch (_) {
-      _db.execute('ROLLBACK');
-      rethrow;
-    }
+    });
     mode = value;
     skin = palette;
     notifyListeners();

@@ -20,7 +20,11 @@ void main() {
       MaterialApp(
         theme: wealthTheme(Skin.grove, Brightness.light),
         builder: (_, nav) => BookScope(book: book, child: nav!),
-        home: HomeShell(lock: () {}),
+        home: HomeShell(
+          lock: () {},
+          afterLock: (_) {},
+          sessionActive: () => true,
+        ),
       ),
     );
     await t.pumpAndSettle();

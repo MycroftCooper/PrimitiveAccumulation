@@ -7,6 +7,7 @@ import '../core/theme.dart';
 import '../features/growth.dart';
 import '../features/ledger.dart';
 import '../features/review.dart';
+import '../features/settings.dart';
 import '../features/stocktake.dart';
 import '../shared/widgets.dart';
 
@@ -18,6 +19,22 @@ class WealthApp extends StatefulWidget {
 
 class _WealthAppState extends State<WealthApp> with WidgetsBindingObserver {
   Book? book;
+  final homeKey = GlobalKey<_HomeShellState>();
+  BackupPickerResult? pendingBackup;
+
+  void receiveBackup(BackupPickerResult result) {
+    if (!mounted) return;
+    pendingBackup = result;
+    deliverBackup();
+  }
+
+  void deliverBackup() {
+    final home = homeKey.currentState, result = pendingBackup;
+    if (home == null || result == null || book?.demo != false) return;
+    pendingBackup = null;
+    home.openSettings(result);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -36,6 +53,9 @@ class _WealthAppState extends State<WealthApp> with WidgetsBindingObserver {
   void unlock(Book next) {
     next.addListener(changed);
     setState(() => book = next);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) deliverBackup();
+    });
   }
 
   void lock() {
@@ -71,7 +91,14 @@ class _WealthAppState extends State<WealthApp> with WidgetsBindingObserver {
       themeMode: b?.mode ?? ThemeMode.system,
       builder: (_, child) =>
           b == null ? child! : BookScope(book: b, child: child!),
-      home: b == null ? VaultGate(onOpen: unlock) : HomeShell(lock: lock),
+      home: b == null
+          ? VaultGate(onOpen: unlock)
+          : HomeShell(
+              key: homeKey,
+              lock: lock,
+              afterLock: receiveBackup,
+              sessionActive: () => identical(book, b),
+            ),
     );
   }
 }
@@ -149,7 +176,7 @@ class _VaultGateState extends State<VaultGate> {
         const Icon(Icons.savings_outlined, size: 64),
         SectionTitle(exists ? '打开我的账本' : '我的第一份财富手账'),
         Text(
-          exists ? '输入本机账本密码，继续盘点。' : '资产、负债和盘点记录仅保存在本机。卸载、更换设备或忘记密码可能丢失账本。',
+          exists ? '输入本机账本密码，继续盘点。' : '账本保存在本机。卸载前请在「设置」导出备份。换机后可创建账本，再从备份恢复。',
         ),
         TextField(
           controller: pass,
@@ -196,13 +223,31 @@ class _VaultGateState extends State<VaultGate> {
 
 class HomeShell extends StatefulWidget {
   final VoidCallback lock;
-  const HomeShell({super.key, required this.lock});
+  final ValueChanged<BackupPickerResult> afterLock;
+  final bool Function() sessionActive;
+  const HomeShell({
+    super.key,
+    required this.lock,
+    required this.sessionActive,
+    required this.afterLock,
+  });
   @override
   State<HomeShell> createState() => _HomeShellState();
 }
 
 class _HomeShellState extends State<HomeShell> {
   int tab = 0;
+  void openSettings([BackupPickerResult? pending]) {
+    openPage(
+      context,
+      SettingsPage(
+        afterLock: widget.afterLock,
+        sessionActive: widget.sessionActive,
+        pending: pending,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext c) {
     final b = BookScope.of(c);
@@ -211,9 +256,9 @@ class _HomeShellState extends State<HomeShell> {
         title: Text(b.demo ? '原始积累 · 体验账本' : '原始积累'),
         actions: [
           IconButton(
-            tooltip: '外观设置',
-            onPressed: () => openPage(c, const AppearancePage()),
-            icon: const Icon(Icons.palette_outlined),
+            tooltip: '设置',
+            onPressed: openSettings,
+            icon: const Icon(Icons.settings_outlined),
           ),
           IconButton(
             tooltip: b.demo ? '退出体验' : '锁定账本',
@@ -249,49 +294,6 @@ class _HomeShellState extends State<HomeShell> {
             icon: Icon(Icons.add_circle_outline),
             label: '盘点一次',
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class AppearancePage extends StatelessWidget {
-  const AppearancePage({super.key});
-  @override
-  Widget build(BuildContext c) {
-    final b = BookScope.of(c);
-    void update(ThemeMode mode, String skin) {
-      try {
-        b.appearance(mode, skin);
-      } catch (_) {
-        message(c, '外观设置保存失败。');
-      }
-    }
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('外观设置')),
-      body: PageBody(
-        children: [
-          const SectionTitle('明暗模式'),
-          Choices<ThemeMode>(
-            options: const {
-              ThemeMode.system: '跟随系统',
-              ThemeMode.light: '浅色',
-              ThemeMode.dark: '深色',
-            },
-            value: b.mode,
-            onChanged: (v) => update(v, b.skin),
-          ),
-          const SectionTitle('主题配色'),
-          for (final skin in Skin.values)
-            Panel(
-              child: ListTile(
-                leading: CircleAvatar(backgroundColor: skin.seed),
-                title: Text(skin.title),
-                trailing: b.skin == skin.id ? const Icon(Icons.check) : null,
-                onTap: () => update(b.mode, skin.id),
-              ),
-            ),
         ],
       ),
     );
