@@ -5,8 +5,10 @@ import 'models.dart';
 import 'backup.dart';
 
 class Book extends ChangeNotifier {
-  final Database _db;
-  final bool demo;
+  Database _db;
+  final String? _path;
+  bool get demo => _path == null;
+  static const minPasswordLength = 6;
   final List<Snapshot> _periods = [];
   List<Snapshot> get periods => List.unmodifiable(_periods);
   Snapshot? get latest => _periods.lastOrNull;
@@ -15,7 +17,7 @@ class Book extends ChangeNotifier {
   WealthGoal? goal;
   ThemeMode mode = ThemeMode.system;
   String skin = 'grove';
-  Book._(this._db, this.demo) {
+  Book._(this._db, this._path) {
     _db.execute('PRAGMA foreign_keys=ON');
     _db.execute(
       'CREATE TABLE IF NOT EXISTS snapshots(id INTEGER PRIMARY KEY, time INTEGER NOT NULL, entries TEXT NOT NULL)',
@@ -69,23 +71,80 @@ class Book extends ChangeNotifier {
       (jsonDecode(json) as List).map((m) => Entry.fromJson(m)).toList();
   static String _encodeItems(List<Entry> items) =>
       jsonEncode(items.map((e) => e.toJson()).toList());
-  factory Book.open(String path, String password) {
-    final db = sqlite3.open(path);
+  static String _hexPassword(String password) => utf8
+      .encode(password)
+      .map((b) => b.toRadixString(16).padLeft(2, '0'))
+      .join();
+
+  static Database _openKeyed(String path, String password, OpenMode mode) {
+    if (password.isEmpty) throw const FormatException('请输入账本密码。');
+    final db = sqlite3.open(path, mode: mode);
     try {
-      final key = password.replaceAll("'", "''");
-      db.execute("PRAGMA key='$key'");
-      // Verify the cipher before creating tables. An existing file needs its key first.
+      db.execute("PRAGMA hexkey='${_hexPassword(password)}'");
       db.select('SELECT sqlite3mc_version()');
-      db.select('SELECT count(*) FROM sqlite_master');
       db.execute('PRAGMA busy_timeout = 3000');
-      return Book._(db, false);
+      db.select('SELECT count(*) FROM sqlite_master');
+      return db;
     } catch (_) {
       db.close();
       rethrow;
     }
   }
+
+  factory Book.open(String path, String password) {
+    final db = _openKeyed(path, password, OpenMode.readWriteCreate);
+    try {
+      return Book._(db, path);
+    } catch (_) {
+      db.close();
+      rethrow;
+    }
+  }
+
+  String get _personalPath => _path ?? (throw StateError('体验账本没有解锁密码。'));
+
+  bool verifyPassword(String password) {
+    if (password.isEmpty) return false;
+    try {
+      _openKeyed(_personalPath, password, OpenMode.readOnly).close();
+      return true;
+    } on SqliteException catch (e) {
+      if (e.resultCode == SqlError.SQLITE_NOTADB) return false;
+      rethrow;
+    }
+  }
+
+  void changePassword(String oldPassword, String newPassword) {
+    if (newPassword.length < minPasswordLength || newPassword == oldPassword) {
+      throw const FormatException('请使用与旧密码不同、至少 6 位的新密码。');
+    }
+    // Authenticate the on-disk key again when saving, including after another
+    // window has rotated it since the first step of the form.
+    final db = _openKeyed(_personalPath, oldPassword, OpenMode.readWrite);
+    try {
+      db.execute('PRAGMA foreign_keys=ON');
+      db.execute('PRAGMA locking_mode=EXCLUSIVE');
+      db.execute('BEGIN EXCLUSIVE');
+      db.select('SELECT generation FROM restore_state WHERE id=1');
+      db.execute('COMMIT');
+      // Exclusive mode retains the lock across COMMIT. Rekey manages its own
+      // transaction; switching back to NORMAL releases the lock on next access.
+      db.execute('PRAGMA locking_mode=NORMAL');
+      final result = db.select(
+        "PRAGMA hexrekey='${_hexPassword(newPassword)}'",
+      );
+      if (result.single.values.single != 'ok') throw StateError('更新账本密码失败。');
+    } catch (_) {
+      db.close();
+      rethrow;
+    }
+    final previous = _db;
+    _db = db;
+    previous.close();
+  }
+
   factory Book.example() {
-    final book = Book._(sqlite3.openInMemory(), true);
+    final book = Book._(sqlite3.openInMemory(), null);
     const names = ['定期存款', '中短债', '活期存款', '股票', '公积金'];
     List<Entry> sample(List<int> amounts) => List.generate(
       amounts.length,

@@ -148,7 +148,9 @@ class _VaultGateState extends State<VaultGate> {
   Future<void> enter() async {
     if (busy || path == null) return;
     if (pass.text.isEmpty ||
-        (!exists && (pass.text.length < 6 || pass.text != confirm.text))) {
+        (!exists &&
+            (pass.text.length < Book.minPasswordLength ||
+                pass.text != confirm.text))) {
       setState(() => error = exists ? '请输入解锁密码。' : '请设置至少 6 位密码，并确认两次输入一致。');
       return;
     }

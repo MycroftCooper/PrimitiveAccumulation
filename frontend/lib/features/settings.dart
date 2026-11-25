@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../core/backup.dart';
 import '../core/book.dart';
+import 'change_password.dart';
 import 'update_tile.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
@@ -188,6 +189,27 @@ class _SettingsState extends State<SettingsPage> {
                 onTap: busy ? null : () => openPage(c, const AppearancePage()),
               ),
             ),
+            if (!book.demo)
+              Panel(
+                child: ListTile(
+                  leading: const Icon(Icons.password_outlined),
+                  title: const Text('修改账本密码'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: busy
+                      ? null
+                      : () async {
+                          final changed = await openPage<bool>(
+                            c,
+                            ChangePasswordPage(
+                              sessionActive: widget.sessionActive,
+                            ),
+                          );
+                          if (changed == true && c.mounted) {
+                            message(c, '账本密码已修改，下次请用新密码解锁。');
+                          }
+                        },
+                ),
+              ),
             const SectionTitle('账本备份'),
             Panel(
               child: Column(
