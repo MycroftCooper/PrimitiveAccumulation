@@ -12,7 +12,7 @@ Primitive Accumulation 是一款跨 iOS、Android、Windows 和 macOS 的本地�
 
 ## 当前阶段
 
-项目目前处于规划阶段，已经完成以下内容的第一轮规划：
+项目已进入客户端实现阶段，以下文档记录第一轮规划：
 
 - 产品定位与 MVP 范围；
 - 技术路线与项目结构；
@@ -20,7 +20,7 @@ Primitive Accumulation 是一款跨 iOS、Android、Windows 和 macOS 的本地�
 - 数据可视化与正反馈原则；
 - MVP 页面信息架构与关键用户流程。
 
-当前尚未初始化 Flutter 工程，也没有生成应用业务代码。
+已实现成长、账本、盘点回执与回顾的手机优先 Flutter 客户端，运行、测试及主题组件说明见 [客户端 README](frontend/README.md)。
 
 ## MVP 范围与边界
 
@@ -56,7 +56,7 @@ PrimitiveAccumulation/
 ```
 
 - `ForAI/`：当前规划阶段的协作文档入口；
-- `frontend/`：未来唯一的 Flutter 客户端工程根目录，目前只有说明文件，尚未初始化工程；
+- `frontend/`：Flutter 客户端工程和本地 SQLite 数据层；
 - `backend/`：为第二版账号、同步、共享空间、AI 与 OCR 能力预留，MVP 不运行。
 
 不新增重复的 `docs/` 目录，项目规划文档统一维护在 `ForAI/`。
@@ -102,7 +102,4 @@ MVP 客户端只访问本地 SQLite。第二版客户端经 API 访问后端，�
 
 ## 下一步
 
-1. 继续完成逐页 UI 与交互细化；
-2. 确定 Flutter 的具体依赖和本地数据库实现方案；
-3. 完成必要审阅后初始化 Flutter 工程；
-4. 按 MVP 优先级进入开发。
+继续验证四端设备体验，并按 MVP 优先级完善后续模块。
