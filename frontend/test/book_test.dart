@@ -88,7 +88,7 @@ void main() {
       final a = Book.example(), b = Book.example();
       a.commit();
       expect(b.periods.length, 2);
-      expect(b.latest!.net, 71243800);
+      expect(b.latest!.net, 32000000);
       a.dispose();
       b.dispose();
     },

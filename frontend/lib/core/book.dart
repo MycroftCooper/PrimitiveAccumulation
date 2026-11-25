@@ -154,17 +154,17 @@ class Book extends ChangeNotifier {
         category: names[i],
         cents: amounts[i] * 100,
         due: i == 0
-            ? '2027-11-28'
+            ? '2027-09-30'
             : i == 1
-            ? '2026-08-24'
+            ? '2026-03-31'
             : '',
-        rate: i == 0 ? '1.90' : '',
+        rate: i == 0 ? '2.00' : '',
       ),
     );
-    book.draft = sample([200000, 150000, 100000, 150000]);
-    book._commitAt(DateTime(2026, 5, 15));
-    book.draft = sample([200000, 150000, 82252, 253064, 27122]);
-    book._commitAt(DateTime(2026, 7, 15));
+    book.draft = sample([160000, 40000, 26000, 74000]);
+    book._commitAt(DateTime(2025, 9, 30));
+    book.draft = sample([160000, 42000, 30000, 80000, 8000]);
+    book._commitAt(DateTime(2025, 10, 31));
     book.setGoal(const WealthGoal('我的第一个 100 万', 100000000, 1, ''));
     return book;
   }

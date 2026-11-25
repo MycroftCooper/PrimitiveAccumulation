@@ -1,8 +1,13 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+val signingFile = file(providers.environmentVariable("PA_ANDROID_SIGNING_PROPERTIES")
+    .getOrElse("${System.getProperty("user.home")}/.android/primitive-accumulation/key.properties"))
 
 android {
     namespace = "app.primitiveaccumulation.primitive_accumulation"
@@ -25,11 +30,21 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            if (signingFile.isFile) {
+                val properties = Properties().apply { signingFile.inputStream().use { load(it) } }
+                storeFile = signingFile.parentFile.resolve(properties.getProperty("storeFile"))
+                storePassword = properties.getProperty("storePassword")
+                keyAlias = properties.getProperty("keyAlias")
+                keyPassword = properties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

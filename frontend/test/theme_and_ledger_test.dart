@@ -32,17 +32,17 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('2026-05-15\n第 1 期'));
+      await tester.tap(find.text('2025-09-30\n第 1 期'));
       await tester.pumpAndSettle();
-      expect(find.text('2026-05-15 · 第 1 期'), findsOneWidget);
-      expect(find.text('¥150,000'), findsWidgets);
+      expect(find.text('2025-09-30 · 第 1 期'), findsOneWidget);
+      expect(find.text('¥74,000'), findsWidgets);
       await tester.pageBack();
       await tester.pumpAndSettle();
       expect(find.byType(BalanceChart), findsOneWidget);
       await tester.tap(find.text('构成占比'));
       await tester.pumpAndSettle();
       expect(find.text('股票占总资产'), findsOneWidget);
-      expect(find.text('35.5%'), findsOneWidget);
+      expect(find.text('25.0%'), findsOneWidget);
       expect(find.byType(BalanceChart), findsNothing);
     },
   );

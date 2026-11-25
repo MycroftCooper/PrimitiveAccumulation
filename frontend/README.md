@@ -32,6 +32,12 @@ v1 文件依次包含 ASCII 标头 `PA-BACKUP:1\n`（末尾为换行）、16 字
 
 「检查更新」按需查询本项目的 GitHub Releases，只发送版本查询请求。正式发布使用与客户端版本对应的标签（例如 v0.2.0 或 v0.2.0+2），发现新版本时可打开发布页。
 
+### Android 正式发布
+
+版本名与构建号在 `pubspec.yaml` 中维护。首次正式版为 `0.0.1+5002`，构建号高于早期按 ABI 分包的本机试用版。运行 `flutter build apk --release` 生成通用 APK。正式包使用专用签名密钥。
+
+Gradle 默认从 `~/.android/primitive-accumulation/key.properties` 读取 `storeFile`、`storePassword`、`keyAlias` 和 `keyPassword`。可以用 `PA_ANDROID_SIGNING_PROPERTIES` 指定其他位置，密钥库相对路径从该配置文件所在目录解析。请私下备份密钥库与配置，后续发布使用同一签名。
+
 ## 主题和组件
 
 - `lib/core/theme.dart` 集中提供皮肤配色、明暗背景、Material 组件样式，以及存钱罐和图表使用的语义颜色。新增配色从 `Skin` 扩展。

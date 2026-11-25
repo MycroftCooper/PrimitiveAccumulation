@@ -1,7 +1,7 @@
 name: primitive_accumulation
 description: 本地优先的个人净资产盘点与成长手账。
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.0.1+5002
 
 environment:
   sdk: ^3.12.2

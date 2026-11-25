@@ -37,13 +37,13 @@ void main() {
 
     expect(find.byType(PigBank), findsOneWidget);
     await tap('盘点一次');
-    await t.enterText(find.widgetWithText(TextField, '当前余额（元）'), '92252');
+    await t.enterText(find.widgetWithText(TextField, '当前余额（元）'), '40000');
     await tap('核对本期');
     await tap('提交并看回执');
-    expect(book.latest!.net, 72243800);
+    expect(book.latest!.net, 33000000);
     expect(find.text('+10,000 元'), findsWidgets);
     await tap('活期存款');
-    expect(find.text('¥82,252'), findsOneWidget);
+    expect(find.text('¥30,000'), findsOneWidget);
     await t.pageBack();
     await t.pumpAndSettle();
     await t.enterText(find.byType(TextField), '测试回顾');
