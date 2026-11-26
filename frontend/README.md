@@ -42,20 +42,35 @@ Gradle 默认从 `~/.android/primitive-accumulation/key.properties` 读取 `stor
 
 ### 本地 CI 发布 Android 和 iOS
 
-从仓库根目录运行一条命令。Mac 使用 `python3 scripts/release.py`，Windows 使用 `python scripts/release.py`。脚本从当前 Git 提交提取客户端，在临时目录依次安装锁定依赖、静态检查、运行所有 Flutter 测试、打签名 APK 和 Ad Hoc IPA，最后将两个附件发布到本项目的 GitHub Release。
+从仓库根目录运行一条命令。Mac 使用 `python3 scripts/release.py`，Windows 使用 `python scripts/release.py`。脚本从当前 Git 提交提取客户端，在临时目录依次安装锁定依赖、静态检查、运行所有 Flutter 测试、打签名 APK 和 Ad Hoc IPA，最后将两个附件发布到本项目的同一个 GitHub Release。Windows 默认用 GitHub Actions 的 macOS runner 编译并签名 iOS，本机完成 Android 打包和 Release 发布。
 
 **首次配置**
 
 - 构建机准备 Python 3.9+、Git 与 Git LFS、Flutter 3.44.8、JDK 和 Android SDK，设置 `ANDROID_HOME` 并安装 SDK Build Tools。使用前述 Android 正式签名。多个 Flutter 并存时，执行一次 `git config --local pa.flutter "Flutter 可执行文件绝对路径"` 绑定本仓库的 SDK；环境变量 `PA_FLUTTER` 可临时覆盖该设置。
-- 发布机执行 `gh auth login` 和 `gh auth setup-git`，账号需要有本仓库推送标签和发布 Release 的权限。
-- Mac 安装 Flutter 和 Xcode，完成 Xcode 首次初始化。在 Xcode 中登录 Apple 开发者账号，准备匹配 Runner Bundle ID `app.primitiveaccumulation.primitiveAccumulation` 的签名身份和 Ad Hoc 描述文件，并注册安装设备。在 Mac 的 `~/.config/primitive-accumulation/ios.xcconfig` 写入一行 `DEVELOPMENT_TEAM = 你的团队ID`。证书私钥保存在 Mac 钥匙串。Ad Hoc IPA 仅供描述文件中登记的设备安装；随 IPA 分发的描述文件包含这些设备的标识。
-- 从 Windows 发起时，在 OpenSSH 中配置 Mac 的主机别名、密钥登录和已验证的主机密钥。PowerShell 中设置 `$env:PA_MAC_HOST = '你的Mac别名'`。Mac 的 Bash 登录环境应能找到 Flutter 和 Xcode，并能使用签名钥匙串。Android 构建和 GitHub 发布均在 Windows 上执行，仅将本次提交的客户端源码和 iOS 构建脚本传至 Mac。
+- 发布机执行 `gh auth login -h github.com -s workflow` 和 `gh auth setup-git`。使用有权限推送含工作流的分支、读取 Actions 产物和创建 Release 的账号。仓库需启用 GitHub Actions 和托管 macOS runner。
+- 为 Bundle ID `app.primitiveaccumulation.primitiveAccumulation` 准备 Apple Distribution 证书（含私钥的 .p12）、证书密码和匹配的 Ad Hoc 描述文件（.mobileprovision）。在 Apple 开发者账号中登记安装设备；IPA 中的描述文件含这些设备的标识。
+- 在仓库 Settings → Secrets and variables → Actions 中设置下列三个 Repository secrets。也可在已登录的 Windows PowerShell 中执行，替换示例文件路径：
+
+```powershell
+$repo = 'MycroftCooper/PrimitiveAccumulation'
+[Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\signing\distribution.p12')) | gh secret set IOS_CERTIFICATE_BASE64 --repo $repo
+gh secret set IOS_CERTIFICATE_PASSWORD --repo $repo
+[Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\signing\adhoc.mobileprovision')) | gh secret set IOS_PROFILE_BASE64 --repo $repo
+```
+
+密码由 CLI 提示输入。runner 从描述文件读取 Team ID，为本次签名创建临时钥匙串。Android 正式签名密钥留在 Windows。
 
 **每次发布**
 
 更新 `frontend/pubspec.yaml` 的版本名和构建号并提交本次改动，再运行入口。版本 `0.0.2+5003` 对应标签 `v0.0.2`。每个正式版本使用新标签。脚本验证 APK 的正式证书和版本、IPA 的签名和版本，产物位于 `frontend/build/releases/<标签>/<提交前12位>/`。
 
+Windows 的 APK 验证通过后，脚本把本次提交推到唯一的 `ci/ios-release/…` 临时分支，输出对应 Actions 运行链接并等待完成。runner 构建签名 IPA，Windows 从该次运行下载产物。脚本随后清理临时分支。iOS 构建失败或产物验证失败时，已生成的 APK 保留在本地。
+
 两个包就绪后，脚本推送指向同一提交的标签，并在 GitHub 草稿中上传、核对附件，最后公开 Release。打包失败时可修复环境后重跑。若上传中断，重跑同一提交可继续同名草稿。已经公开的版本使用新版本号发布更新。
+
+**使用自有 Mac 时**
+
+在 Mac 上运行入口会使用本机 Xcode。Windows 显式设置 `PA_MAC_HOST` 时仍使用原有 SSH 构建路径。Mac 需要可用的 Flutter、Xcode、签名身份和描述文件，`~/.config/primitive-accumulation/ios.xcconfig` 可设置 `DEVELOPMENT_TEAM = 你的团队ID`。SSH 模式还需提前配置密钥登录、信任 Mac 主机密钥，并确保 Bash 登录环境能访问 Flutter 和签名钥匙串。
 
 ## 主题和组件
 

@@ -11,7 +11,11 @@ if [[ -f "$signing" ]]; then
 fi
 flutter_bin="${PA_FLUTTER:-flutter}"
 "$flutter_bin" pub get --enforce-lockfile
-"$flutter_bin" build ipa --release --no-pub --export-method ad-hoc
+export_args=(--export-method ad-hoc)
+if [[ -n "${PA_IOS_EXPORT_OPTIONS:-}" ]]; then
+  export_args=(--export-options-plist "$PA_IOS_EXPORT_OPTIONS")
+fi
+"$flutter_bin" build ipa --release --no-pub "${export_args[@]}"
 
 # Flutter can finish the archive successfully even if the IPA export failed.
 shopt -s nullglob

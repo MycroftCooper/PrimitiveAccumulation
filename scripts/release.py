@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import uuid
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,12 +78,56 @@ def remote_ios(host, archive, ipa):
         run(*ssh, f"rm -rf {remote_dir}")
 
 
+def actions_ios(commit, ipa):
+    repo_url = f"https://github.com/{REPO}.git"
+    repo_args = ["--repo", REPO]
+    run("gh", "repo", "view", REPO, "--json", "nameWithOwner")
+    # A unique push ref starts the workflow at this exact SHA, including on
+    # first use before the default branch contains the workflow.
+    branch = f"ci/ios-release/{uuid.uuid4().hex}"
+    ref = f"refs/heads/{branch}"
+    run("git", "push", repo_url, f"{commit}:{ref}")
+    try:
+        endpoint = (f"repos/{REPO}/actions/runs?branch={branch}"
+                    f"&head_sha={commit}&event=push&per_page=100")
+        deadline = time.monotonic() + 300
+        while True:
+            runs = json.loads(output("gh", "api", endpoint))["workflow_runs"]
+            job = next((r for r in runs if r["head_branch"] == branch
+                        and r["head_sha"] == commit
+                        and r["path"] == ".github/workflows/ios-release.yml"), None)
+            if job:
+                break
+            if time.monotonic() >= deadline:
+                raise ValueError(f"未找到 {branch} 的 iOS 构建，请检查仓库 Actions 设置。")
+            time.sleep(5)
+        run_id = str(job["id"])
+        print(f"等待 iOS 构建 {job['html_url']}", flush=True)
+        run("gh", "run", "watch", run_id, *repo_args, "--exit-status", "--interval", "15")
+        folder = ipa.parent / "downloaded-ios"
+        run("gh", "run", "download", run_id, *repo_args, "--name", f"ios-{commit}",
+            "--dir", folder)
+        (folder / "app.ipa").rename(ipa)
+    finally:
+        # Only remove this invocation's ref if it still points to our commit.
+        cleanup = subprocess.run(["git", "push", f"--force-with-lease={ref}:{commit}",
+                                  repo_url, f":{ref}"], cwd=ROOT)
+        if cleanup.returncode:
+            print(f"未能清理临时分支 {branch}。", file=sys.stderr)
+
+
 def verify_ipa(ipa, version, number):
     with zipfile.ZipFile(ipa) as bundle:
         plists = [p for p in bundle.namelist() if re.fullmatch(r"Payload/[^/]+\.app/Info\.plist", p)]
         if len(plists) != 1:
             raise ValueError("IPA 缺少应用 Info.plist。")
+        app = plists[0].rsplit("/", 1)[0]
+        for name in ("embedded.mobileprovision", "_CodeSignature/CodeResources"):
+            if f"{app}/{name}" not in bundle.namelist():
+                raise ValueError("IPA 缺少签名或设备描述文件。")
         info = plistlib.loads(bundle.read(plists[0]))
+        if info.get("CFBundleIdentifier") != "app.primitiveaccumulation.primitiveAccumulation":
+            raise ValueError("IPA 的 Bundle ID 不属于本应用。")
         if (info.get("CFBundleShortVersionString"), info.get("CFBundleVersion")) != (version, number):
             raise ValueError("IPA 版本与 pubspec.yaml 不一致。")
 
@@ -115,7 +161,7 @@ def main():
         flutter = output("git", "config", "--default", "flutter", "--get", "pa.flutter")
         os.environ["PA_FLUTTER"] = flutter
     commit = output("git", "rev-parse", "HEAD")
-    if output("git", "status", "--porcelain", "--untracked-files=all", "--", "frontend", "scripts"):
+    if output("git", "status", "--porcelain", "--untracked-files=all", "--", "frontend", "scripts", ".github/workflows"):
         raise ValueError("请先提交要发布的客户端和脚本改动，安装包将从该提交构建。")
     with tempfile.TemporaryDirectory(prefix="pa-release-") as tmp:
         work = Path(tmp)
@@ -144,7 +190,7 @@ def main():
         elif os.environ.get("PA_MAC_HOST"):
             remote_ios(os.environ["PA_MAC_HOST"], archive, ipa)
         else:
-            raise ValueError("iOS 打包需要 Mac。请在 Mac 上运行，或设置 PA_MAC_HOST。本次尚未发布。")
+            actions_ios(commit, ipa)
         verify_ipa(ipa, version, number)
         ios = dest / f"{stem}.ipa"
         shutil.copyfile(ipa, ios)

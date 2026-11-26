@@ -22,7 +22,7 @@ Primitive Accumulation 是一款跨 iOS、Android、Windows 和 macOS 的本地�
 
 已实现成长、账本、盘点回执与回顾的手机优先 Flutter 客户端，运行、测试及主题组件说明见 [客户端 README](frontend/README.md)。
 
-从仓库根目录运行 `python scripts/release.py` 可执行移动端测试、打包与 GitHub Release 发布。首次签名和 Mac 构建机配置见[本地 CI 发布说明](frontend/README.md#本地-ci-发布-android-和-ios)。
+从仓库根目录运行 `python scripts/release.py` 可执行移动端测试、打包与 GitHub Release 发布。在 Windows 上运行时，GitHub Actions 的 macOS runner 负责编译签名 IPA。首次签名和发布配置见[本地 CI 发布说明](frontend/README.md#本地-ci-发布-android-和-ios)。
 
 ## MVP 范围与边界
 
