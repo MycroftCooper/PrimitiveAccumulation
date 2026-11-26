@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../core/backup.dart';
 import '../core/book.dart';
+import '../core/biometric_vault.dart';
 import 'change_password.dart';
 import 'update_tile.dart';
 import '../core/models.dart';
@@ -35,11 +36,55 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsState extends State<SettingsPage> {
   bool busy = false;
-  String? status;
+  String? status, biometricMessage;
+  bool biometricEnabled = false, biometricAvailable = false;
+
+  Future<void> loadBiometrics() async {
+    try {
+      final enabled = await BiometricVault.enabled();
+      final available = await BiometricVault.available();
+      if (!mounted) return;
+      setState(() {
+        biometricEnabled = enabled;
+        biometricAvailable = available;
+      });
+    } catch (_) {
+      // The password remains available if platform services are unavailable.
+    }
+  }
+
+  Future<void> toggleBiometrics(bool enable) async {
+    final book = BookScope.of(context);
+    biometricMessage = null;
+    try {
+      if (enable) {
+        final key = await showDialog<String>(
+          context: context,
+          builder: (_) => const _PasswordDialog(create: false, ledger: true),
+        );
+        if (key == null || !mounted || !widget.sessionActive()) return;
+        if (!book.verifyPassword(key)) {
+          biometricMessage = '账本密码不正确，请重新开启并验证。';
+          return;
+        }
+        await BiometricVault.enable(key);
+      } else {
+        await BiometricVault.disable();
+      }
+      if (mounted) setState(() => biometricEnabled = enable);
+    } catch (_) {
+      biometricMessage = '未能更改生物识别设置，请检查系统指纹或面容设置后重试。';
+    }
+  }
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && BiometricVault.mobile && !BookScope.of(context).demo) {
+        loadBiometrics();
+      }
+    });
     final pending = widget.pending;
     if (pending != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -205,9 +250,28 @@ class _SettingsState extends State<SettingsPage> {
                             ),
                           );
                           if (changed == true && c.mounted) {
+                            await loadBiometrics();
+                            if (!c.mounted) return;
                             message(c, '账本密码已修改，下次请用新密码解锁。');
                           }
                         },
+                ),
+              ),
+            if (!book.demo && BiometricVault.mobile)
+              Panel(
+                child: SwitchListTile(
+                  secondary: const Icon(Icons.fingerprint),
+                  title: const Text('生物识别解锁'),
+                  subtitle: Text(
+                    biometricMessage ??
+                        (biometricEnabled || biometricAvailable
+                            ? '使用本机已录入的指纹或面容打开账本'
+                            : '请先在支持的手机上设置指纹或面容'),
+                  ),
+                  value: biometricEnabled,
+                  onChanged: busy || (!biometricAvailable && !biometricEnabled)
+                      ? null
+                      : (value) => run(() => toggleBiometrics(value)),
                 ),
               ),
             const SectionTitle('账本备份'),
@@ -297,7 +361,8 @@ class AppearancePage extends StatelessWidget {
 
 class _PasswordDialog extends StatefulWidget {
   final bool create;
-  const _PasswordDialog({required this.create});
+  final bool ledger;
+  const _PasswordDialog({required this.create, this.ledger = false});
   @override
   State<_PasswordDialog> createState() => _PasswordDialogState();
 }
@@ -318,7 +383,11 @@ class _PasswordDialogState extends State<_PasswordDialog> {
         (widget.create &&
             (first.text.length < 8 || first.text != second.text))) {
       setState(
-        () => error = widget.create ? '请填写至少 8 位密码，并确认两次一致。' : '请输入备份密码。',
+        () => error = widget.create
+            ? '请填写至少 8 位密码，并确认两次一致。'
+            : widget.ledger
+            ? '请输入账本密码。'
+            : '请输入备份密码。',
       );
       return;
     }
@@ -328,7 +397,13 @@ class _PasswordDialogState extends State<_PasswordDialog> {
   @override
   Widget build(BuildContext c) => AlertDialog(
     scrollable: true,
-    title: Text(widget.create ? '设置备份密码' : '打开加密备份'),
+    title: Text(
+      widget.ledger
+          ? '验证账本密码'
+          : widget.create
+          ? '设置备份密码'
+          : '打开加密备份',
+    ),
     content: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -338,7 +413,9 @@ class _PasswordDialogState extends State<_PasswordDialog> {
           obscureText: true,
           autocorrect: false,
           enableSuggestions: false,
-          decoration: const InputDecoration(labelText: '备份密码'),
+          decoration: InputDecoration(
+            labelText: widget.ledger ? '账本密码' : '备份密码',
+          ),
           onSubmitted: widget.create ? null : (_) => submit(),
         ),
         if (widget.create)
@@ -358,7 +435,13 @@ class _PasswordDialogState extends State<_PasswordDialog> {
       TextButton(onPressed: () => Navigator.pop(c), child: const Text('取消')),
       FilledButton(
         onPressed: submit,
-        child: Text(widget.create ? '选择保存位置' : '预览备份'),
+        child: Text(
+          widget.ledger
+              ? '开启生物识别'
+              : widget.create
+              ? '选择保存位置'
+              : '预览备份',
+        ),
       ),
     ],
   );

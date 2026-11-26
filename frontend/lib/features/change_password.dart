@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/book.dart';
+import '../core/biometric_vault.dart';
 import '../shared/widgets.dart';
 
 class ChangePasswordPage extends StatefulWidget {
@@ -44,7 +45,14 @@ class _ChangePasswordState extends State<ChangePasswordPage> {
         if (!verified) error = '旧密码不正确，请重新输入。';
       } else {
         book.changePassword(old.text, next.text);
-        Navigator.pop(context, true);
+        if (BiometricVault.mobile) {
+          try {
+            await BiometricVault.disable();
+          } catch (_) {
+            // The rekeyed database already rejects the obsolete credential.
+          }
+        }
+        if (mounted && widget.sessionActive()) Navigator.pop(context, true);
       }
     } on FormatException catch (e) {
       error = e.message;

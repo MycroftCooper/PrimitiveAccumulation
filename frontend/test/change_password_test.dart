@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:primitive_accumulation/core/book.dart';
 import 'package:primitive_accumulation/core/models.dart';
@@ -91,6 +92,17 @@ void main() {
   testWidgets(
     'settings verifies old password before accepting two matching new passwords',
     (tester) async {
+      const channel = MethodChannel('primitive_accumulation/biometric');
+      final messenger = tester.binding.defaultBinaryMessenger;
+      bool enabled = true;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        if (call.method == 'disable') {
+          enabled = false;
+          return null;
+        }
+        return enabled;
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
       final book = Book.open(path, old);
       addTearDown(book.dispose);
       await tester.pumpWidget(
@@ -123,6 +135,7 @@ void main() {
       await tester.tap(find.text('保存新密码'));
       await tester.pumpAndSettle();
       expect(find.text('设置'), findsOneWidget);
+      expect(enabled, isFalse);
       expect(book.verifyPassword(next), isTrue);
       expect(book.verifyPassword(old), isFalse);
     },

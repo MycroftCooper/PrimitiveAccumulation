@@ -91,8 +91,14 @@ class Book extends ChangeNotifier {
     }
   }
 
-  factory Book.open(String path, String password) {
-    final db = _openKeyed(path, password, OpenMode.readWriteCreate);
+  factory Book.open(String path, String password) =>
+      Book._open(path, password, OpenMode.readWriteCreate);
+
+  factory Book.openExisting(String path, String password) =>
+      Book._open(path, password, OpenMode.readWrite);
+
+  factory Book._open(String path, String password, OpenMode mode) {
+    final db = _openKeyed(path, password, mode);
     try {
       return Book._(db, path);
     } catch (_) {

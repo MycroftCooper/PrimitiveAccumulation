@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:path_provider/path_provider.dart';
 import '../core/book.dart';
+import '../core/biometric_vault.dart';
 import '../core/theme.dart';
 import '../features/growth.dart';
 import '../features/ledger.dart';
@@ -110,13 +111,22 @@ class VaultGate extends StatefulWidget {
   State<VaultGate> createState() => _VaultGateState();
 }
 
-class _VaultGateState extends State<VaultGate> {
+class _VaultGateState extends State<VaultGate> with WidgetsBindingObserver {
+  bool biometric = false;
+  int lockGeneration = 0;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) lockGeneration++;
+  }
+
   final pass = TextEditingController(), confirm = TextEditingController();
   String? path, error;
   bool exists = false, busy = false;
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     locate();
   }
 
@@ -133,6 +143,14 @@ class _VaultGateState extends State<VaultGate> {
           error = null;
         });
       }
+      if (found) {
+        try {
+          final enabled = await BiometricVault.enabled();
+          if (mounted) setState(() => biometric = enabled);
+        } catch (_) {
+          // Platform storage may be unavailable. The password gate stays usable.
+        }
+      }
     } catch (_) {
       if (mounted) setState(() => error = '无法访问本机存储，请重试。');
     }
@@ -140,9 +158,32 @@ class _VaultGateState extends State<VaultGate> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     pass.dispose();
     confirm.dispose();
     super.dispose();
+  }
+
+  Future<void> unlockWithBiometrics() async {
+    if (busy || !exists || path == null) return;
+    final generation = lockGeneration;
+    setState(() {
+      busy = true;
+      error = null;
+    });
+    try {
+      final password = await BiometricVault.unlock();
+      if (!mounted || generation != lockGeneration) return;
+      if (password == null || password.isEmpty) {
+        setState(() => error = '未完成识别，可重试或输入账本密码。');
+        return;
+      }
+      widget.onOpen(Book.openExisting(path!, password));
+    } catch (_) {
+      if (mounted) setState(() => error = '无法使用生物识别，请输入账本密码。');
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
   }
 
   Future<void> enter() async {
@@ -178,8 +219,18 @@ class _VaultGateState extends State<VaultGate> {
         const Icon(Icons.savings_outlined, size: 64),
         SectionTitle(exists ? '打开我的账本' : '我的第一份财富手账'),
         Text(
-          exists ? '输入本机账本密码，继续盘点。' : '账本保存在本机。卸载前请在「设置」导出备份。换机后可创建账本，再从备份恢复。',
+          biometric
+              ? '使用本机生物识别或账本密码，继续盘点。'
+              : exists
+              ? '输入本机账本密码，继续盘点。'
+              : '账本保存在本机。卸载前请在「设置」导出备份。换机后可创建账本，再从备份恢复。',
         ),
+        if (biometric)
+          FilledButton.icon(
+            onPressed: busy ? null : unlockWithBiometrics,
+            icon: const Icon(Icons.fingerprint),
+            label: const Text('生物识别解锁'),
+          ),
         TextField(
           controller: pass,
           obscureText: true,

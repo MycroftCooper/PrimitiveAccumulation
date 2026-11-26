@@ -12,5 +12,8 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    let channel = FlutterMethodChannel(name: "primitive_accumulation/biometric",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger())
+    channel.setMethodCallHandler(BiometricVault().handle)
   }
 }
