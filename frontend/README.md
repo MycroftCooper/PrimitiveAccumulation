@@ -46,7 +46,7 @@ Gradle 默认从 `~/.android/primitive-accumulation/key.properties` 读取 `stor
 
 **首次配置**
 
-- 构建机准备 Python 3.9+、Git 与 Git LFS、Flutter 3.44.8、JDK 和 Android SDK，设置 `ANDROID_HOME` 并安装 SDK Build Tools。使用前述 Android 正式签名。多个 Flutter 并存时，可将 `PA_FLUTTER` 设为对应的 Flutter 可执行文件绝对路径。
+- 构建机准备 Python 3.9+、Git 与 Git LFS、Flutter 3.44.8、JDK 和 Android SDK，设置 `ANDROID_HOME` 并安装 SDK Build Tools。使用前述 Android 正式签名。多个 Flutter 并存时，执行一次 `git config --local pa.flutter "Flutter 可执行文件绝对路径"` 绑定本仓库的 SDK；环境变量 `PA_FLUTTER` 可临时覆盖该设置。
 - 发布机执行 `gh auth login` 和 `gh auth setup-git`，账号需要有本仓库推送标签和发布 Release 的权限。
 - Mac 安装 Flutter 和 Xcode，完成 Xcode 首次初始化。在 Xcode 中登录 Apple 开发者账号，准备匹配 Runner Bundle ID `app.primitiveaccumulation.primitiveAccumulation` 的签名身份和 Ad Hoc 描述文件，并注册安装设备。在 Mac 的 `~/.config/primitive-accumulation/ios.xcconfig` 写入一行 `DEVELOPMENT_TEAM = 你的团队ID`。证书私钥保存在 Mac 钥匙串。Ad Hoc IPA 仅供描述文件中登记的设备安装；随 IPA 分发的描述文件包含这些设备的标识。
 - 从 Windows 发起时，在 OpenSSH 中配置 Mac 的主机别名、密钥登录和已验证的主机密钥。PowerShell 中设置 `$env:PA_MAC_HOST = '你的Mac别名'`。Mac 的 Bash 登录环境应能找到 Flutter 和 Xcode，并能使用签名钥匙串。Android 构建和 GitHub 发布均在 Windows 上执行，仅将本次提交的客户端源码和 iOS 构建脚本传至 Mac。

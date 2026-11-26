@@ -111,6 +111,9 @@ def publish(tag, commit, assets):
 
 
 def main():
+    if not os.environ.get("PA_FLUTTER"):
+        flutter = output("git", "config", "--default", "flutter", "--get", "pa.flutter")
+        os.environ["PA_FLUTTER"] = flutter
     commit = output("git", "rev-parse", "HEAD")
     if output("git", "status", "--porcelain", "--untracked-files=all", "--", "frontend", "scripts"):
         raise ValueError("请先提交要发布的客户端和脚本改动，安装包将从该提交构建。")
