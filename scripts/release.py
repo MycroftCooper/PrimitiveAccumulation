@@ -27,6 +27,11 @@ def android_build(frontend, version, number):
     flutter = shutil.which(os.environ.get("PA_FLUTTER", "flutter"))
     if not flutter:
         raise ValueError("请配置 Flutter 或设置 PA_FLUTTER。")
+    # sqlite3 rechecks its pinned SHA-256 before accepting a cached download.
+    cache = Path(".dart_tool/hooks_runner/shared/sqlite3/build")
+    for entry in (ROOT / "frontend" / cache).glob("download-*"):
+        if entry.is_dir():
+            shutil.copytree(entry, frontend / cache / entry.name)
     for args in [
         ["pub", "get", "--enforce-lockfile"],
         ["analyze", "--no-pub"],
